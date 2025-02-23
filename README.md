@@ -6,5 +6,5 @@ Código para detecção de exercícios
 
 Rodar no terminal ---> pip install -r requirements.txt
 
-
+crie um tunel https com a ferramenta ngrok caso queria rodar a aplicação Web
 
