@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconhecimento de Gestos</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        video {
+            width: 100%;
+            max-width: 500px;
+            height: auto;
+            border: 2px solid black;
+        }
+        #hand-state, #exercise, #recent-gestures {
+            font-size: 1.5em;
+            margin-top: 10px;
+        }
+        .buttons {
+            margin-top: 20px;
+        }
+        button {
+            font-size: 1.2em;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Reconhecimento de Gestos</h1>
+    <video id="video" autoplay playsinline></video>
+    <p id="hand-state">Gesto: Aguardando...</p>
+    <p id="exercise">Exercicio Realizado: Nenhum</p>
+    <p id="recent-gestures">Sequencia de Gestos: []</p>
+
+    <div class="buttons">
+        <button id="start-btn">Iniciar Captura</button>
+        <button id="pause-btn">Parar Captura</button>
+        <button id="clear-btn">Limpar Gestos</button>
+        <button id="switch-camera-btn">Trocar Camera</button>
+    </div>
+
+    <script>
+        const video = document.getElementById("video");
+        const handStateText = document.getElementById("hand-state");
+        const exerciseText = document.getElementById("exercise");
+        const recentGesturesText = document.getElementById("recent-gestures");
+        const startBtn = document.getElementById("start-btn");
+        const pauseBtn = document.getElementById("pause-btn");
+        const clearBtn = document.getElementById("clear-btn");
+        const switchCameraBtn = document.getElementById("switch-camera-btn");
+
+        let ws;
+        let isDetectionActive = false;
+        let intervalId = null;
+        let isFrontCamera = true; // Variável para alternar entre câmera frontal e traseira
+        let currentStream = null; // Variável para armazenar o stream atual
+
+        // Função para parar o stream atual
+        function stopWebcam() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+        }
+
+        // Função para pedir permissão e iniciar a câmera
+        async function startWebcam(useFront = true) {
+            stopWebcam(); // Para o stream atual antes de iniciar um novo
+
+            try {
+                const constraints = {
+                    video: { facingMode: useFront ? "user" : "environment" }
+                };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                currentStream = stream;
+            } catch (error) {
+                console.error("Erro ao acessar a webcam:", error);
+                handStateText.innerText = "Erro ao acessar a câmera! Permissão negada ou erro no dispositivo.";
+            }
+        }
+
+        // WebSocket para conectar com o backend
+        function connectWebSocket() {
+            ws = new WebSocket("wss://a945-2804-d4b-af3e-4800-41be-5b5a-8d7d-2c1f.ngrok-free.app/ws");
+
+            ws.onopen = () => {
+                console.log("WebSocket conectado!");
+            };
+
+            ws.onmessage = function(event) {
+                console.log("Resposta do servidor:", event.data);
+
+                // Processa a resposta JSON
+                const response = JSON.parse(event.data);
+                const handState = response.hand_state;
+                const exercise = response.exercise;
+                const recentGestures = response.recent_gestures;
+
+                // Atualiza o estado da mão
+                handStateText.innerText = "Estado da Mao: " + handState;
+
+                // Atualiza o exercício realizado
+                exerciseText.innerText = "Exercicio Realizado: " + exercise;
+
+                // Atualiza a sequência de gestos
+                recentGesturesText.innerText = "Gestos: " + JSON.stringify(recentGestures);
+            };
+
+            ws.onclose = function() {
+                console.log("WebSocket fechado. Reconectando...");
+                setTimeout(connectWebSocket, 2000); // Tentar reconectar após 2 segundos
+            };
+
+            ws.onerror = function(error) {
+                console.error("Erro no WebSocket:", error);
+            };
+        }
+
+        // Função para capturar frames da câmera e enviá-los para o servidor
+        function captureAndSendFrame() {
+            if (!video.videoWidth || !isDetectionActive) return;
+
+            const tempCanvas = document.createElement("canvas");
+            tempCanvas.width = video.videoWidth;
+            tempCanvas.height = video.videoHeight;
+            const tempCtx = tempCanvas.getContext("2d");
+
+            tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+            const dataURL = tempCanvas.toDataURL("image/jpeg", 0.8); // Comprimir a imagem (qualidade 80%)
+            ws.send(dataURL);
+        }
+
+        // Inicia a detecção
+        startBtn.addEventListener("click", () => {
+            isDetectionActive = true;
+            console.log("Detecção iniciada!");
+            if (!intervalId) {
+                intervalId = setInterval(captureAndSendFrame, 200);
+            }
+        });
+
+        // Pausa a detecção
+        pauseBtn.addEventListener("click", () => {
+            isDetectionActive = false;
+            console.log("Detecção pausada!");
+        });
+
+        // Limpa a sequência de gestos
+        clearBtn.addEventListener("click", () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: "clear" }));
+                console.log("Sequência de gestos limpa!");
+            }
+        });
+
+        // Alternar entre câmera frontal e traseira
+        switchCameraBtn.addEventListener("click", () => {
+            isFrontCamera = !isFrontCamera;
+            startWebcam(isFrontCamera);
+        });
+
+        // Ao carregar a página, iniciar a câmera e conectar WebSocket
+        startWebcam();
+        connectWebSocket();
+    </script>
+</body>
+</html>
