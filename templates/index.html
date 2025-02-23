@@ -28,11 +28,23 @@
             margin: 5px;
             cursor: pointer;
         }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            max-width: 500px;
+            height: 100%;
+            pointer-events: none; /* Permite interação com o vídeo abaixo */
+        }
     </style>
 </head>
 <body>
     <h1>Reconhecimento de Gestos</h1>
-    <video id="video" autoplay playsinline></video>
+    <div style="position: relative; display: inline-block;">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+    </div>
     <p id="hand-state">Gesto: Aguardando...</p>
     <p id="exercise">Exercicio Realizado: Nenhum</p>
     <p id="recent-gestures">Sequencia de Gestos: []</p>
@@ -44,8 +56,16 @@
         <button id="switch-camera-btn">Trocar Camera</button>
     </div>
 
+    <!-- Inclua as bibliotecas do MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
     <script>
         const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        const canvasCtx = canvas.getContext("2d");
         const handStateText = document.getElementById("hand-state");
         const exerciseText = document.getElementById("exercise");
         const recentGesturesText = document.getElementById("recent-gestures");
@@ -59,6 +79,43 @@
         let intervalId = null;
         let isFrontCamera = true; // Variável para alternar entre câmera frontal e traseira
         let currentStream = null; // Variável para armazenar o stream atual
+        let camera; // Variável para armazenar a instância da câmera do MediaPipe
+
+        // Configurações do MediaPipe Hands
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+        });
+
+        // Função para desenhar os landmarks
+        hands.onResults((results) => {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    // Desenha os landmarks e as conexões
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
+                        color: "#00FF00",
+                        lineWidth: 2,
+                    });
+                    drawLandmarks(canvasCtx, landmarks, {
+                        color: "#FF0000",
+                        lineWidth: 1,
+                        radius: 3, // Reduz o tamanho dos pontos
+                    });
+                }
+            }
+
+            canvasCtx.restore();
+        });
 
         // Função para parar o stream atual
         function stopWebcam() {
@@ -66,28 +123,59 @@
                 currentStream.getTracks().forEach(track => track.stop());
                 currentStream = null;
             }
+            if (camera) {
+                camera.stop(); // Para a câmera do MediaPipe
+            }
         }
 
         // Função para pedir permissão e iniciar a câmera
         async function startWebcam(useFront = true) {
             stopWebcam(); // Para o stream atual antes de iniciar um novo
 
+            // Desativa temporariamente os logs de erro
+            const originalConsoleError = console.error;
+            console.error = () => {};
+
             try {
                 const constraints = {
-                    video: { facingMode: useFront ? "user" : "environment" }
+                    video: {
+                        facingMode: useFront ? "user" : { exact: "environment" } // Força o uso da câmera traseira
+                    }
                 };
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 currentStream = stream;
+
+                // Ajusta o tamanho do canvas para o tamanho do vídeo
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                };
+
+                // Inicializa o MediaPipe Hands para processar o vídeo
+                camera = new Camera(video, {
+                    onFrame: async () => {
+                        try {
+                            await hands.send({ image: video });
+                        } catch (error) {
+  
+                        }
+                    },
+                    width: 640,
+                    height: 480,
+                });
+                camera.start();
             } catch (error) {
-                console.error("Erro ao acessar a webcam:", error);
-                handStateText.innerText = "Erro ao acessar a câmera! Permissão negada ou erro no dispositivo.";
+                // Ignora erros de acesso à câmera
+            } finally {
+                // Restaura a função original de console.error
+                console.error = originalConsoleError;
             }
         }
 
         // WebSocket para conectar com o backend
         function connectWebSocket() {
-            ws = new WebSocket("wss://a945-2804-d4b-af3e-4800-41be-5b5a-8d7d-2c1f.ngrok-free.app/ws");
+            ws = new WebSocket("wss://5ed6-2804-d4b-af3e-4800-e985-830-b2b2-fe2e.ngrok-free.app/ws");
 
             ws.onopen = () => {
                 console.log("WebSocket conectado!");

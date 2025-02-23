@@ -27,8 +27,7 @@ exercises = {
     ('0', '2', '3', '4'): 'Exercício 2',
     ('0', '5', '0'): 'Exercício 3',           
     ('0', '6', '0'): 'Exercício 4',  
-    ('0', '7', '8', '9', '10'): 'Exercício 5',  
-    ('11', '12', '11'): 'Exercício 6',     
+    ('0', '7', '8', '9', '10'): 'Exercício 5',    
 }
 
 app = FastAPI()
@@ -186,4 +185,4 @@ def check_exercise(recent_gestures):
         return None
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
