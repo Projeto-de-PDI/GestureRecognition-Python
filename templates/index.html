@@ -47,6 +47,8 @@
     </div>
     <p id="hand-state">Gesto: Aguardando...</p>
     <p id="exercise">Exercicio Realizado: Nenhum</p>
+    <p id="objective"></p>
+    <p id="benefit"></p>
     <p id="recent-gestures">Sequencia de Gestos: []</p>
 
     <div class="buttons">
@@ -68,6 +70,8 @@
         const canvasCtx = canvas.getContext("2d");
         const handStateText = document.getElementById("hand-state");
         const exerciseText = document.getElementById("exercise");
+        const objectiveText = document.getElementById("objective");
+        const benefitText = document.getElementById("benefit");
         const recentGesturesText = document.getElementById("recent-gestures");
         const startBtn = document.getElementById("start-btn");
         const pauseBtn = document.getElementById("pause-btn");
@@ -80,6 +84,7 @@
         let isFrontCamera = true; // Variável para alternar entre câmera frontal e traseira
         let currentStream = null; // Variável para armazenar o stream atual
         let camera; // Variável para armazenar a instância da câmera do MediaPipe
+        let ultimoExercicio = null; // Variável para armazenar o último exercício detectado
 
         // Configurações do MediaPipe Hands
         const hands = new Hands({
@@ -109,7 +114,7 @@
                     drawLandmarks(canvasCtx, landmarks, {
                         color: "#FF0000",
                         lineWidth: 1,
-                        radius: 3, // Reduz o tamanho dos pontos
+                        radius: 2, // Reduz o tamanho dos pontos
                     });
                 }
             }
@@ -158,7 +163,7 @@
                         try {
                             await hands.send({ image: video });
                         } catch (error) {
-  
+                            console.error("Erro ao processar o frame:", error);
                         }
                     },
                     width: 640,
@@ -166,16 +171,26 @@
                 });
                 camera.start();
             } catch (error) {
-                // Ignora erros de acesso à câmera
+                console.error("Erro ao acessar a câmera:", error);
             } finally {
                 // Restaura a função original de console.error
                 console.error = originalConsoleError;
             }
         }
 
+        // Função para ler o texto em voz alta
+        function lerTexto(texto) {
+            const utterance = new SpeechSynthesisUtterance(texto);
+            const voices = window.speechSynthesis.getVoices();
+            utterance.voice = voices.find(voice => voice.lang === 'pt-BR') || voices[0]; // Usa uma voz em português, se disponível
+            utterance.rate = 1; // Velocidade normal
+            utterance.pitch = 1; // Tom normal
+            window.speechSynthesis.speak(utterance);
+        }
+
         // WebSocket para conectar com o backend
         function connectWebSocket() {
-            ws = new WebSocket("wss://5ed6-2804-d4b-af3e-4800-e985-830-b2b2-fe2e.ngrok-free.app/ws");
+            ws = new WebSocket("wss://e6fe-2804-d4b-af3e-4800-d1a4-f92f-59a0-1ddc.ngrok-free.app/ws");
 
             ws.onopen = () => {
                 console.log("WebSocket conectado!");
@@ -188,13 +203,26 @@
                 const response = JSON.parse(event.data);
                 const handState = response.hand_state;
                 const exercise = response.exercise;
+                const objective = response.objective;
+                const benefit = response.benefit;
                 const recentGestures = response.recent_gestures;
 
                 // Atualiza o estado da mão
                 handStateText.innerText = "Estado da Mao: " + handState;
 
-                // Atualiza o exercício realizado
-                exerciseText.innerText = "Exercicio Realizado: " + exercise;
+                // Atualiza o exercício realizado apenas se um novo exercício for detectado
+                if (exercise && exercise !== "Nenhum" && exercise !== ultimoExercicio) {
+                    exerciseText.innerText = "Exercicio Realizado: " + exercise;
+                    objectiveText.innerText =  objective;
+                    benefitText.innerText =   benefit;
+
+                    // Ler o texto em voz alta
+                    const textoParaLer = `${exercise}. ${objective}. ${benefit}`;
+                    lerTexto(textoParaLer);
+
+                    // Atualiza o último exercício detectado
+                    ultimoExercicio = exercise;
+                }
 
                 // Atualiza a sequência de gestos
                 recentGesturesText.innerText = "Gestos: " + JSON.stringify(recentGestures);

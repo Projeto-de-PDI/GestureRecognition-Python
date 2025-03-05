@@ -21,13 +21,33 @@ model = load_model('models/hand_gesture_landmarks_model.h5')
 # Mapeamento das classes
 class_names = {0: '0', 1: '1', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10'}
 
-# Dicionário de exercícios (sequência de gestos -> nome do exercício)
+# Dicionário de exercícios (sequência de gestos -> nome do exercício, objetivo, benefício)
 exercises = {
-    ('0', '1', '0'): 'Exercício 1',  
-    ('0', '2', '3', '4'): 'Exercício 2',
-    ('0', '5', '0'): 'Exercício 3',           
-    ('0', '6', '0'): 'Exercício 4',  
-    ('0', '7', '8', '9', '10'): 'Exercício 5',    
+    ('0', '1', '0'): {
+        'name': 'Exercício de flexão e extensão de dedos',
+        'objective': 'Objetivo: Melhorar a mobilidade e a força dos dedos.',
+        'benefit': 'Benefício: Ajuda a reduzir a rigidez e aumenta a amplitude de movimento.'
+    },
+    ('0', '2', '3', '4'): {
+        'name': 'Exercício de coordenação e destreza dos dedos',
+        'objective': 'Objetivo: Melhorar a coordenação motora fina.',
+        'benefit': 'Benefício: Facilita atividades diárias que exigem precisão manual.'
+    },
+    ('0', '5', '0'): {
+        'name': 'Exercício de mão em garra',
+        'objective': 'Objetivo: Fortalecer os músculos dos dedos e da mão.',
+        'benefit': 'Benefício: Aumenta a força de preensão e a resistência muscular.'
+    },
+    ('0', '6', '0'): {
+        'name': 'Exercício de fechamento em cúpula',
+        'objective': 'Objetivo: Melhorar a flexibilidade e a força da mão.',
+        'benefit': 'Benefício: Reduz a dor e a fadiga muscular durante atividades prolongadas.'
+    },
+    ('0', '7', '8', '9', '10'): {
+        'name': 'Exercício de oposição do polegar',
+        'objective': 'Objetivo: Melhorar a mobilidade do polegar.',
+        'benefit': 'Benefício: Facilita movimentos de pinça e agarramento.'
+    }
 }
 
 app = FastAPI()
@@ -69,6 +89,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_text(json.dumps({
                         "hand_state": "Nenhum gesto detectado",
                         "exercise": "Nenhum",
+                        "objective": "",
+                        "benefit": "",
                         "recent_gestures": []
                     }))
                     continue
@@ -113,6 +135,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 predicted_class = np.argmax(prediction)
                 gesture_name = class_names[predicted_class]
 
+                # Envia o gesto atual imediatamente para o frontend
+                response = {
+                    "hand_state": gesture_name,
+                    "exercise": current_exercise if current_exercise else "Nenhum",
+                    "objective": "",
+                    "benefit": "",
+                    "recent_gestures": recent_gestures
+                }
+                await websocket.send_text(json.dumps(response))
+
                 # Verifica se o gesto atual é o mesmo que o último detectado
                 if current_gesture == gesture_name:
                     # Verifica se o gesto foi mantido por tempo suficiente
@@ -121,7 +153,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         if not recent_gestures or gesture_name != recent_gestures[-1]:
                             recent_gestures.append(gesture_name)
 
-                        # Mante apenas os cinco gestos mais recentes
+                        # Mantém apenas os cinco gestos mais recentes
                         if len(recent_gestures) > 5:
                             recent_gestures.pop(0)
 
@@ -130,28 +162,32 @@ async def websocket_endpoint(websocket: WebSocket):
                         current_gesture_start_time = None
 
                         # Verifica se a sequência de gestos corresponde a um exercício
-                        exercise_name = check_exercise(recent_gestures)
-                        if exercise_name:
-                            current_exercise = exercise_name  # Atualiza o exercício atual
+                        exercise_info = check_exercise(recent_gestures)
+                        if exercise_info:
+                            current_exercise = exercise_info['name']  # Atualiza o exercício atual
                             recent_gestures = []  # Zera o dicionário de gestos recentes
+
+                            # Envia a resposta para o frontend (estado da mão, exercício, objetivo, benefício e sequência de gestos)
+                            response = {
+                                "hand_state": gesture_name,
+                                "exercise": current_exercise,
+                                "objective": exercise_info['objective'],
+                                "benefit": exercise_info['benefit'],
+                                "recent_gestures": recent_gestures
+                            }
+                            await websocket.send_text(json.dumps(response))
                 else:
                     # Se o gesto mudou, atualizar o gesto atual e o tempo de início
                     current_gesture = gesture_name
                     current_gesture_start_time = time.time()
-
-                # Envia a resposta para o frontend (estado da mão, exercício e sequência de gestos)
-                response = {
-                    "hand_state": gesture_name,
-                    "exercise": current_exercise if current_exercise else "Nenhum",
-                    "recent_gestures": recent_gestures
-                }
-                await websocket.send_text(json.dumps(response))
 
             else:
                 # Se nenhuma mão for detectada
                 response = {
                     "hand_state": "Nenhum gesto detectado",
                     "exercise": "Nenhum",
+                    "objective": "",
+                    "benefit": "",
                     "recent_gestures": recent_gestures
                 }
                 await websocket.send_text(json.dumps(response))
